@@ -1,0 +1,79 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+env:
+  UV_VERSION: "0.13.10"
+
+jobs:
+  lint-and-type:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v4
+        with:
+          version: ${{ env.UV_VERSION }}
+          enable-cache: true
+      - run: uv sync --extra dev --frozen
+      - name: ruff (lint)
+        run: uv run ruff check .
+      - name: ruff (format)
+        run: uv run ruff format --check .
+      - name: mypy
+        run: uv run mypy
+
+  unit-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v4
+        with:
+          version: ${{ env.UV_VERSION }}
+          enable-cache: true
+      - run: uv sync --extra dev --frozen
+      - name: pytest (model mocked; no network)
+        run: uv run pytest tests/unit -v --cov=gerry --cov-report=term-missing
+
+  integration-tests:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_PASSWORD: test
+          POSTGRES_DB: gerry
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v4
+        with:
+          version: ${{ env.UV_VERSION }}
+          enable-cache: true
+      - run: uv sync --extra dev --frozen
+      - name: pytest (integration)
+        env:
+          DATABASE_URL: postgresql+psycopg://postgres:test@localhost:5432/gerry
+        run: uv run pytest tests/integration -v -m integration
+
+  docker-build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: build image
+        run: docker build --build-arg GIT_SHA=${{ github.sha }} -t gerry:${{ github.sha }} .
+      - name: container starts and answers /healthz
+        run: |
+          docker run -d --name gerry -p 8080:8080 gerry:${{ github.sha }}
+          for i in $(seq 1 30); do
+            if curl -fs http://localhost:8080/healthz; then echo "OK"; exit 0; fi
+            sleep 1
+          done
+          echo "healthz never came up"; docker logs gerry; exit 1

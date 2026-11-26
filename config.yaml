@@ -1,0 +1,27 @@
+# Non-secret configuration. Secrets live in .env / Fly secrets.
+
+s3:
+  bucket: mr-gerry-media
+  region: us-west-1
+  upload_prefix: uploads/
+  gallery_prefix: galleries/
+  signed_url_ttl_seconds: 604800   # 7 days
+
+prefilter:
+  # Perceptual-hash distance below which two frames are "near duplicates".
+  phash_distance: 8
+  # Variance-of-Laplacian below this is flagged as blurry.
+  blur_threshold: 100.0
+  # Fraction of pixels at the extremes before a frame is flagged.
+  clipped_fraction: 0.25
+
+scoring:
+  provider: claude
+  model: claude-sonnet-4-5
+  prompt_version: cull_v1
+  max_retries: 3
+
+eval:
+  # CI gate thresholds. See evals/README.md.
+  min_keep_precision: 0.80
+  max_cost_increase_pct: 20

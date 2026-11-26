@@ -1,0 +1,28 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.venv/
+venv/
+
+# Secrets - NEVER commit
+.env
+.env.*
+!.env.example
+*.pem
+
+# Data - client photos must never reach a public repo.
+# Golden-set LABELS (csv) are committed; the images are not.
+data/
+!data/golden/labels.csv
+!data/.gitkeep
+
+# Local artifacts
+*.db
+*.sqlite3
+.DS_Store
+.coverage
+htmlcov/

@@ -1,0 +1,74 @@
+[project]
+name = "gerry"
+version = "0.1.0"
+description = "AI-assisted photo culling and delivery pipeline"
+requires-python = ">=3.13"
+dependencies = [
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.32",
+    "jinja2>=3.1",
+    "python-multipart>=0.0.12",
+    "pydantic>=2.9",
+    "pydantic-settings>=2.6",
+    "sqlalchemy>=2.0",
+    "alembic>=1.14",
+    "psycopg[binary]>=3.2",
+    "boto3>=1.35",
+    "anthropic>=0.40",
+    "pillow>=11.0",
+    "imagehash>=4.3",
+    "numpy>=2.1",
+    "pyyaml>=6.0",
+    "structlog>=24.4",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.3",
+    "pytest-asyncio>=0.24",
+    "pytest-cov>=6.0",
+    "httpx>=0.27",
+    "ruff>=0.8",
+    "mypy>=1.13",
+    "pre-commit>=4.0",
+    "types-pyyaml",
+    "boto3-stubs[s3]",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/gerry"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
+addopts = "-q"
+asyncio_default_fixture_loop_scope = "function"
+markers = [
+    "integration: requires Postgres (docker)",
+    "eval: hits the real model API; costs money",
+]
+
+[tool.ruff]
+line-length = 100
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM", "RUF"]
+
+[tool.ruff.lint.per-file-ignores]
+# tools/ is not an installed package; tests reach it via sys.path
+"tests/unit/test_golden_tools.py" = ["E402"]
+
+[tool.mypy]
+python_version = "3.13"
+strict = true
+mypy_path = "src"
+packages = ["gerry"]
+
+[[tool.mypy.overrides]]
+module = ["imagehash.*"]
+ignore_missing_imports = true
