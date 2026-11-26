@@ -9,7 +9,9 @@ ranked cull with reasons, review and override, deliver a private client gallery.
 
 ## Status
 
-Week 1 — scaffolding. Not yet deployed.
+**Live:** https://gerry-cull.fly.dev — [`/healthz`](https://gerry-cull.fly.dev/healthz)
+
+Week 1 — deployed skeleton. Ingest and pre-filter in progress.
 
 ## How it works
 
