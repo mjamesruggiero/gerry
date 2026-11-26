@@ -46,6 +46,11 @@ Latest eval results: _pending_
 
 ## Development
 
+> **Note:** this project uses `uv`'s default in-project `.venv` rather than the
+> `~/virtualenvs/<repo>` convention used elsewhere. `uv run` activates it
+> automatically, and the Dockerfile and CI both assume it — so never `source`
+> anything. If you have another venv active, `deactivate` first.
+
 ```bash
 uv sync --extra dev
 uv run pre-commit install
