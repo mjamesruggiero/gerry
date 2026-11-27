@@ -1,9 +1,10 @@
 {
-  "n": 215,
-  "keep_precision": 0.717,
-  "keep_recall": 0.4086,
-  "agreement": 0.6093,
-  "cost_total_usd": 1.6103,
-  "cost_per_100_usd": 0.749,
-  "p95_latency_ms": 3627
+  "n": 349,
+  "keep_precision": 0.8421,
+  "keep_recall": 0.1151,
+  "agreement": 0.6476,
+  "auc": 0.657,
+  "cost_total_usd": 2.8985,
+  "cost_per_100_usd": 0.8305,
+  "p95_latency_ms": 3801
 }

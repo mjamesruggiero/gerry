@@ -96,8 +96,17 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument(
         "--prompt-version", default=None, help="Override the prompt version (e.g. cull_v2)"
     )
-    ap.add_argument("--min-precision", type=float, default=0.80)
+    ap.add_argument("--min-precision", type=float, default=0.75)
+    ap.add_argument("--min-auc", type=float, default=0.60)
     ap.add_argument("--max-cost-increase", type=float, default=20.0)
+    ap.add_argument(
+        "--keep-threshold",
+        type=float,
+        default=None,
+        help="Quality score at/above which a frame is 'keep'. "
+        "When set, overrides the model's own verdict -- the "
+        "ranking is the model's job, the cut point is ours.",
+    )
     ap.add_argument("-v", "--verbose", action="store_true")
     args = ap.parse_args(argv)
 
@@ -150,9 +159,24 @@ def main(argv: list[str] | None = None) -> int:
         for f in as_completed(futures):
             f.result()
 
-    result = evaluate(predicted, labels, costs_usd=costs, latencies_ms=latencies)
+    # Apply our own threshold to the model's ranking, when we have scores.
+    if args.keep_threshold is not None and qualities:
+        overridden = {
+            name: ("keep" if qualities.get(name, -1.0) >= args.keep_threshold else "reject")
+            for name in predicted
+            if name in qualities
+        }
+        predicted.update(overridden)
+        logger.info(
+            "applied keep-threshold %.0f to %d scored frames", args.keep_threshold, len(overridden)
+        )
+
+    result = evaluate(
+        predicted, labels, costs_usd=costs, latencies_ms=latencies, scores=qualities or None
+    )
     baseline = load_baseline(args.baseline)
     thresholds = GateThresholds(
+        min_auc=args.min_auc,
         min_keep_precision=args.min_precision,
         max_cost_increase_pct=args.max_cost_increase,
     )

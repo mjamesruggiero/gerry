@@ -30,6 +30,27 @@ class ConfusionCounts:
         return self.true_positive + self.false_positive + self.false_negative + self.true_negative
 
 
+def roc_auc(scores: Mapping[str, float], labels: Mapping[str, str]) -> float:
+    """Probability a random kept frame outscores a random rejected one. Pure.
+
+    Mann-Whitney U formulation, ties counted as half. 0.5 is chance, 1.0 is
+    perfect ranking.
+
+    This is the primary quality metric because it is **threshold-independent**:
+    it measures whether the model can rank frames at all, separately from
+    where we choose to cut. Precision at a fixed threshold moves when the
+    model's score distribution shifts even if its ranking is unchanged --
+    especially given the observed score clustering (ADR 0003).
+    """
+    shared = sorted(set(scores) & set(labels))
+    pos = [scores[k] for k in shared if labels[k] == "keep"]
+    neg = [scores[k] for k in shared if labels[k] != "keep"]
+    if not pos or not neg:
+        return 0.5
+    wins = sum((p > n) + 0.5 * (p == n) for p in pos for n in neg)
+    return wins / (len(pos) * len(neg))
+
+
 @dataclass(frozen=True)
 class EvalResult:
     """Everything the CI gate needs to make a pass/fail decision."""
@@ -42,6 +63,7 @@ class EvalResult:
     cost_per_100_usd: float
     p95_latency_ms: int
     confusion: ConfusionCounts
+    auc: float = 0.5
 
     def as_dict(self) -> dict[str, float | int]:
         return {
@@ -49,6 +71,7 @@ class EvalResult:
             "keep_precision": round(self.keep_precision, 4),
             "keep_recall": round(self.keep_recall, 4),
             "agreement": round(self.agreement, 4),
+            "auc": round(self.auc, 4),
             "cost_total_usd": round(self.cost_total_usd, 4),
             "cost_per_100_usd": round(self.cost_per_100_usd, 4),
             "p95_latency_ms": self.p95_latency_ms,
@@ -114,6 +137,7 @@ def evaluate(
     labeled: Mapping[str, str],
     costs_usd: list[float] | None = None,
     latencies_ms: list[int] | None = None,
+    scores: Mapping[str, float] | None = None,
 ) -> EvalResult:
     """Aggregate predictions against ground truth. Pure."""
     counts = confusion_for_keep(predicted, labeled)
@@ -126,6 +150,7 @@ def evaluate(
         keep_precision=precision(counts),
         keep_recall=recall(counts),
         agreement=agreement(predicted, labeled),
+        auc=roc_auc(scores, labeled) if scores else 0.5,
         cost_total_usd=total_cost,
         cost_per_100_usd=(total_cost / n * 100) if n else 0.0,
         p95_latency_ms=percentile(latencies, 95),

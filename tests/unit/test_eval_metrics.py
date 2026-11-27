@@ -145,7 +145,63 @@ class TestEvaluate:
             "keep_precision",
             "keep_recall",
             "agreement",
+            "auc",
             "cost_total_usd",
             "cost_per_100_usd",
             "p95_latency_ms",
         }
+
+
+class TestRocAuc:
+    """AUC is the primary gate metric because it's threshold-independent."""
+
+    def test_perfect_ranking(self):
+        from gerry.evals.metrics import roc_auc
+
+        scores = {"a": 90.0, "b": 80.0, "c": 20.0, "d": 10.0}
+        labels = {"a": "keep", "b": "keep", "c": "reject", "d": "reject"}
+        assert roc_auc(scores, labels) == 1.0
+
+    def test_inverted_ranking(self):
+        from gerry.evals.metrics import roc_auc
+
+        scores = {"a": 10.0, "b": 20.0, "c": 80.0, "d": 90.0}
+        labels = {"a": "keep", "b": "keep", "c": "reject", "d": "reject"}
+        assert roc_auc(scores, labels) == 0.0
+
+    def test_all_tied_is_chance(self):
+        from gerry.evals.metrics import roc_auc
+
+        scores = {"a": 50.0, "b": 50.0, "c": 50.0, "d": 50.0}
+        labels = {"a": "keep", "b": "keep", "c": "reject", "d": "reject"}
+        assert roc_auc(scores, labels) == 0.5
+
+    def test_is_invariant_to_monotonic_rescaling(self):
+        # The point of AUC: shifting/scaling scores must not change it.
+        from gerry.evals.metrics import roc_auc
+
+        labels = {"a": "keep", "b": "keep", "c": "reject", "d": "reject"}
+        base = {"a": 90.0, "b": 70.0, "c": 40.0, "d": 10.0}
+        shifted = {k: v / 2 + 100 for k, v in base.items()}
+        assert roc_auc(base, labels) == roc_auc(shifted, labels)
+
+    def test_no_positives_returns_chance(self):
+        from gerry.evals.metrics import roc_auc
+
+        assert roc_auc({"a": 5.0}, {"a": "reject"}) == 0.5
+
+    def test_maybe_counts_as_not_keep(self):
+        from gerry.evals.metrics import roc_auc
+
+        scores = {"a": 90.0, "b": 10.0}
+        assert roc_auc(scores, {"a": "keep", "b": "maybe"}) == 1.0
+
+    def test_evaluate_includes_auc_when_scores_given(self):
+        pred = {"a": "keep", "b": "reject"}
+        lab = {"a": "keep", "b": "reject"}
+        r = evaluate(pred, lab, scores={"a": 90.0, "b": 10.0})
+        assert r.auc == 1.0
+
+    def test_evaluate_defaults_to_chance_without_scores(self):
+        r = evaluate({"a": "keep"}, {"a": "keep"})
+        assert r.auc == 0.5

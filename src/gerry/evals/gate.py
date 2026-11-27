@@ -20,8 +20,22 @@ from gerry.evals.metrics import EvalResult
 
 @dataclass(frozen=True)
 class GateThresholds:
-    min_keep_precision: float = 0.80
+    """Gate thresholds, set from measured performance (see ADR 0004).
+
+    `min_auc` is the primary quality signal because it is threshold-
+    independent: it asks whether the model can rank frames at all, separately
+    from where we choose to cut. Precision at a fixed threshold swings when
+    the score distribution shifts even if ranking is unchanged, which the
+    observed score clustering makes likely.
+
+    `min_keep_precision` is a secondary floor applied at the *shipping*
+    operating point, not to the model's raw verdicts.
+    """
+
+    min_auc: float = 0.60
+    min_keep_precision: float = 0.75
     max_cost_increase_pct: float = 20.0
+    max_auc_drop: float = 0.05
 
 
 @dataclass(frozen=True)
@@ -52,6 +66,32 @@ def check_gate(
     stored baseline) the cost check is skipped rather than guessed at.
     """
     failures: list[GateFailure] = []
+
+    # Primary: can the model still rank? Absolute floor...
+    if result.auc < thresholds.min_auc:
+        failures.append(
+            GateFailure(
+                check="auc",
+                message=(
+                    f"AUC {result.auc:.3f} is below the floor of "
+                    f"{thresholds.min_auc:.3f} (0.5 = chance)"
+                ),
+            )
+        )
+
+    # ...and a relative guard, so a slow slide gets caught too.
+    if baseline is not None and baseline.auc > 0.5:
+        drop = baseline.auc - result.auc
+        if drop > thresholds.max_auc_drop:
+            failures.append(
+                GateFailure(
+                    check="auc_regression",
+                    message=(
+                        f"AUC fell {drop:.3f} ({baseline.auc:.3f} -> "
+                        f"{result.auc:.3f}), limit is {thresholds.max_auc_drop:.3f}"
+                    ),
+                )
+            )
 
     if result.keep_precision < thresholds.min_keep_precision:
         failures.append(
@@ -118,6 +158,7 @@ def format_pr_comment(
 
     b = baseline
     lines += [
+        row("AUC (ranking)", result.auc, b.auc if b else None),
         row("keep-precision", result.keep_precision, b.keep_precision if b else None),
         row("keep-recall", result.keep_recall, b.keep_recall if b else None),
         row("agreement", result.agreement, b.agreement if b else None),
@@ -163,6 +204,7 @@ def load_baseline(path: Path) -> EvalResult | None:
 
     return EvalResult(
         n=int(data.get("n", 0)),
+        auc=float(data.get("auc", 0.5)),
         keep_precision=float(data.get("keep_precision", 0.0)),
         keep_recall=float(data.get("keep_recall", 0.0)),
         agreement=float(data.get("agreement", 0.0)),

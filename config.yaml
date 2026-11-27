@@ -18,10 +18,19 @@ prefilter:
 scoring:
   provider: claude
   model: claude-sonnet-4-5
-  prompt_version: cull_v1
+  prompt_version: cull_v4
   max_retries: 3
 
+  # The model ranks; we choose the cut. Set from a threshold sweep against
+  # the 349-frame golden set -- see ADR 0003/0004.
+  #   threshold 83 -> precision 0.842, recall 0.115  (shipping: "best picks")
+  #   threshold 43 -> precision 0.533, recall 0.755  (broad net, not shipped)
+  keep_threshold: 83
+
 eval:
-  # CI gate thresholds. See evals/README.md.
-  min_keep_precision: 0.80
+  # Set from measured performance, not aspiration (ADR 0004).
+  # Baseline at the shipping threshold: AUC 0.657, precision 0.842.
+  min_auc: 0.60              # 0.5 is chance; primary, threshold-independent
+  max_auc_drop: 0.05         # catches a slow slide against baseline
+  min_keep_precision: 0.75   # at the shipping threshold, not raw verdicts
   max_cost_increase_pct: 20

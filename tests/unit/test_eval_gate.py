@@ -13,7 +13,7 @@ from gerry.evals.gate import (
 )
 from gerry.evals.metrics import ConfusionCounts, EvalResult
 
-THRESHOLDS = GateThresholds(min_keep_precision=0.80, max_cost_increase_pct=20.0)
+THRESHOLDS = GateThresholds(min_keep_precision=0.80, max_cost_increase_pct=20.0, min_auc=0.60)
 
 
 def result(
@@ -23,6 +23,7 @@ def result(
     recall: float = 0.9,
     agreement: float = 0.85,
     confusion: ConfusionCounts | None = None,
+    auc: float = 0.70,
 ) -> EvalResult:
     return EvalResult(
         n=n,
@@ -33,6 +34,7 @@ def result(
         cost_per_100_usd=cost_per_100,
         p95_latency_ms=3200,
         confusion=confusion or ConfusionCounts(45, 5, 5, 45),
+        auc=auc,
     )
 
 
@@ -135,3 +137,50 @@ class TestLoadBaseline:
         assert loaded is not None
         assert loaded.keep_precision == 0.88
         assert loaded.cost_per_100_usd == 0.74
+
+
+class TestAucGate:
+    """AUC is the primary signal: can the model rank at all?"""
+
+    def _r(self, auc: float, precision: float = 0.85) -> EvalResult:
+        return EvalResult(
+            n=349,
+            keep_precision=precision,
+            keep_recall=0.12,
+            agreement=0.6,
+            cost_total_usd=2.9,
+            cost_per_100_usd=0.83,
+            p95_latency_ms=3800,
+            confusion=ConfusionCounts(16, 3, 120, 210),
+            auc=auc,
+        )
+
+    def test_passes_above_floor(self):
+        assert check_gate(self._r(0.65), GateThresholds()).passed
+
+    def test_fails_below_floor(self):
+        d = check_gate(self._r(0.52), GateThresholds())
+        assert not d.passed
+        assert any(f.check == "auc" for f in d.failures)
+
+    def test_chance_level_ranking_fails(self):
+        assert not check_gate(self._r(0.50), GateThresholds()).passed
+
+    def test_catches_gradual_regression_against_baseline(self):
+        base = self._r(0.70)
+        d = check_gate(self._r(0.62), GateThresholds(), baseline=base)  # -0.08
+        assert not d.passed
+        assert any(f.check == "auc_regression" for f in d.failures)
+
+    def test_small_drop_is_tolerated(self):
+        base = self._r(0.70)
+        assert check_gate(self._r(0.67), GateThresholds(), baseline=base).passed
+
+    def test_improvement_never_fails(self):
+        base = self._r(0.62)
+        assert check_gate(self._r(0.75), GateThresholds(), baseline=base).passed
+
+    def test_auc_appears_in_the_pr_comment(self):
+        r = self._r(0.657)
+        text = format_pr_comment(r, check_gate(r, GateThresholds()))
+        assert "AUC (ranking)" in text
