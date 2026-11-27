@@ -1,0 +1,13 @@
+{% extends "base.html" %}{% block title %}{{ shoot.name }}{% endblock %}
+{% block content %}
+<h1>{{ shoot.name }}</h1>
+<p class="mut">{{ frames | length }} selected images. Links expire in {{ ttl_days }} days.</p>
+<div class="grid">
+{% for f in frames %}
+  <div class="card">
+    <a href="{{ f.url }}" download><img src="{{ f.url }}" alt="{{ f.alt_text }}" loading="lazy"></a>
+    <div class="body"><div class="mut" style="font-size:.75rem">{{ f.filename }}</div></div>
+  </div>
+{% endfor %}
+</div>
+{% endblock %}

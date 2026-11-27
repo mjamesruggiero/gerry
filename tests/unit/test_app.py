@@ -1,4 +1,9 @@
-"""Smoke tests for the HTTP layer."""
+"""Tests for the HTTP layer.
+
+Routes that need a database are covered in tests/integration/; here we check
+the parts that must work regardless -- notably /healthz, which has to answer
+even when the database is down so a bad DB doesn't look like a dead deploy.
+"""
 
 from __future__ import annotations
 
@@ -9,16 +14,34 @@ from gerry.app.main import app
 client = TestClient(app)
 
 
-def test_healthz_returns_ok():
-    r = client.get("/healthz")
-    assert r.status_code == 200
-    body = r.json()
-    assert body["status"] == "ok"
-    assert "version" in body
-    assert "git_sha" in body
+class TestHealthz:
+    def test_returns_ok(self):
+        r = client.get("/healthz")
+        assert r.status_code == 200
+        body = r.json()
+        assert body["status"] == "ok"
+        assert "version" in body
+
+    def test_reports_the_git_sha(self):
+        # Lets a running container be traced back to a commit.
+        assert "git_sha" in client.get("/healthz").json()
+
+    def test_works_without_a_database(self):
+        # No init_engine() has run in this test process.
+        assert client.get("/healthz").status_code == 200
 
 
-def test_index_renders():
-    r = client.get("/")
-    assert r.status_code == 200
-    assert "Gerry" in r.text
+class TestRouting:
+    def test_root_redirects_to_shoots(self):
+        r = client.get("/", follow_redirects=False)
+        assert r.status_code == 302
+        assert r.headers["location"] == "/shoots"
+
+    def test_unknown_path_is_404(self):
+        assert client.get("/nope").status_code == 404
+
+
+class TestOverrideValidation:
+    def test_rejects_an_invalid_verdict_before_touching_the_db(self):
+        r = client.post("/frames/whatever/override?verdict=excellent")
+        assert r.status_code == 400

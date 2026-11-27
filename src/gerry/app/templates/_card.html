@@ -1,0 +1,19 @@
+<div class="card {{ 'dup' if f.duplicate_group is not none }}" id="card-{{ f.id }}">
+  <img src="{{ f.url }}" alt="{{ f.score.alt_text if f.score else f.filename }}" loading="lazy">
+  <div class="body">
+    <div class="mut" style="font-size:.75rem">{{ f.filename }}</div>
+    <div style="margin:.35rem 0">
+      <span class="pill {{ f.verdict }}">{{ f.verdict }}</span>
+      {% if f.quality is not none %}<span class="mut">score {{ f.quality|round|int }}</span>{% endif %}
+      {% if f.overridden %}<span class="mut">· overridden</span>{% endif %}
+    </div>
+    {% if f.score and f.score.reason %}<div class="mut">{{ f.score.reason }}</div>{% endif %}
+    <div style="margin-top:.5rem; display:flex; gap:.3rem">
+      {% for v in ['keep','maybe','reject'] %}
+      <button hx-post="/frames/{{ f.id }}/override?verdict={{ v }}"
+              hx-target="#card-{{ f.id }}" hx-swap="outerHTML"
+              class="{{ 'on' if f.verdict == v }}">{{ v }}</button>
+      {% endfor %}
+    </div>
+  </div>
+</div>

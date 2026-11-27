@@ -1,0 +1,39 @@
+{% extends "base.html" %}{% block title %}{{ shoot.name }} · Gerry{% endblock %}
+{% block content %}
+<h1>{{ shoot.name }}</h1>
+<p class="mut">
+  {{ frames | length }} frames ·
+  <span class="pill keep">{{ keep_count }} keep</span>
+  <span class="pill reject">{{ frames | length - keep_count }} not kept</span>
+  {% if shoot.status != 'ready' %}· <b>{{ shoot.status }}</b>{% endif %}
+</p>
+
+<p>
+  <a href="/shoots/{{ shoot.id }}/gallery"><button>Create client gallery from keeps</button></a>
+  <span class="mut">Frames you override are logged as candidate eval data.</span>
+</p>
+
+<div class="grid">
+{% for f in frames %}
+  <div class="card {{ 'dup' if f.duplicate_group is not none }}" id="card-{{ f.id }}">
+    <img src="{{ f.url }}" alt="{{ f.score.alt_text if f.score else f.filename }}" loading="lazy">
+    <div class="body">
+      <div class="mut" style="font-size:.75rem">{{ f.filename }}</div>
+      <div style="margin:.35rem 0">
+        <span class="pill {{ f.verdict }}">{{ f.verdict }}</span>
+        {% if f.quality is not none %}<span class="mut">score {{ f.quality|round|int }}</span>{% endif %}
+        {% if f.duplicate_group is not none %}<span class="mut">· burst {{ f.duplicate_group }}</span>{% endif %}
+      </div>
+      {% if f.score and f.score.reason %}<div class="mut">{{ f.score.reason }}</div>{% endif %}
+      <div style="margin-top:.5rem; display:flex; gap:.3rem">
+        {% for v in ['keep','maybe','reject'] %}
+        <button hx-post="/frames/{{ f.id }}/override?verdict={{ v }}"
+                hx-target="#card-{{ f.id }}" hx-swap="outerHTML"
+                class="{{ 'on' if f.verdict == v }}">{{ v }}</button>
+        {% endfor %}
+      </div>
+    </div>
+  </div>
+{% endfor %}
+</div>
+{% endblock %}

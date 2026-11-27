@@ -1,0 +1,29 @@
+{% extends "base.html" %}{% block title %}Shoots · Gerry{% endblock %}
+{% block content %}
+<h1>Shoots</h1>
+<p class="mut">Upload a shoot, review the suggested picks, deliver a gallery.</p>
+
+<form class="up" action="/shoots" method="post" enctype="multipart/form-data">
+  <p><input type="text" name="name" placeholder="Shoot name" required style="width:18rem"></p>
+  <p><input type="file" name="files" accept=".jpg,.jpeg" multiple required></p>
+  <p><button type="submit">Upload and process</button>
+     <span class="mut">JPEG only. Scoring costs about $0.83 per 100 frames.</span></p>
+</form>
+
+{% if shoots %}
+<h2>Recent</h2>
+<table>
+<tr><th>Shoot</th><th>Status</th><th>Frames</th><th>Keep</th><th>Created</th><th></th></tr>
+{% for s in shoots %}
+<tr>
+  <td>{{ s.name }}</td>
+  <td><span class="pill {{ 'keep' if s.status == 'ready' else 'unscored' }}">{{ s.status }}</span></td>
+  <td>{{ s.frames | length }}</td>
+  <td>{{ s.frames | selectattr('score') | selectattr('score.final_verdict', 'equalto', 'keep') | list | length }}</td>
+  <td class="mut">{{ s.created_at.strftime('%Y-%m-%d %H:%M') }}</td>
+  <td><a href="/shoots/{{ s.id }}">review</a></td>
+</tr>
+{% endfor %}
+</table>
+{% else %}<p class="mut">No shoots yet.</p>{% endif %}
+{% endblock %}

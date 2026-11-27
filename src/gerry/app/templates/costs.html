@@ -1,0 +1,23 @@
+{% extends "base.html" %}{% block title %}Costs · Gerry{% endblock %}
+{% block content %}
+<h1>Model spend</h1>
+<p class="mut">Every model call is recorded, including failures -- those cost money too.</p>
+<p style="margin:1.5rem 0">
+  <span class="stat"><b>${{ "%.4f"|format(s.total_usd) }}</b><span class="mut">total spend</span></span>
+  <span class="stat"><b>{{ s.calls }}</b><span class="mut">calls</span></span>
+  <span class="stat"><b>${{ "%.4f"|format(s.cost_per_100) }}</b><span class="mut">per 100 frames</span></span>
+  <span class="stat"><b>{{ s.failed_calls }}</b><span class="mut">failed</span></span>
+  <span class="stat"><b>{{ s.avg_latency_ms|round|int }}ms</b><span class="mut">avg latency</span></span>
+</p>
+<table>
+  <tr><th>Metric</th><th>Value</th></tr>
+  <tr><td>Input tokens</td><td>{{ "{:,}".format(s.input_tokens) }}</td></tr>
+  <tr><td>Output tokens</td><td>{{ "{:,}".format(s.output_tokens) }}</td></tr>
+  <tr><td>Model</td><td>{{ model }}</td></tr>
+  <tr><td>Prompt version</td><td>{{ prompt_version }}</td></tr>
+  <tr><td>Keep threshold</td><td>{{ keep_threshold }}</td></tr>
+</table>
+<p class="mut" style="margin-top:1.5rem">
+  Input tokens dominate: the image is ~95% of each call's cost, so resolution
+  is the main cost lever, not prompt length.</p>
+{% endblock %}

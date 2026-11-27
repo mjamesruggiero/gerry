@@ -71,6 +71,11 @@ class Frame(Base):
     blur_score: Mapped[float | None] = mapped_column(Float, nullable=True)
     auto_rejected: Mapped[bool] = mapped_column(default=False)
 
+    # Model's 0-100 deliverability score. Stored on the frame (not the score
+    # row) because the pipeline thresholds it to produce the verdict, and we
+    # want to re-threshold historical shoots without re-scoring them.
+    quality: Mapped[float | None] = mapped_column(Float, nullable=True)
+
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
     shoot: Mapped[Shoot] = relationship(back_populates="frames")
