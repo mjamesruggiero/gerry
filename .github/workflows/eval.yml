@@ -1,8 +1,17 @@
 name: Eval
 
-# The AI quality gate. Runs when the prompt or model layer changes, and
-# nightly to catch provider-side drift. Deliberately NOT on every commit --
-# real model calls cost money.
+# The AI quality gate.
+#
+# Triggers are deliberately event-driven, not time-driven:
+#   - PRs touching prompts/ or models/ -- this is when quality can change
+#   - weekly, to catch provider-side drift
+#   - manual dispatch, for evidence on demand
+#
+# Originally nightly (per spec), changed to weekly after measuring the cost:
+# nightly runs were ~$56/mo against ~$5.60/mo of actual product usage, i.e.
+# 10x more spent watching than doing -- while re-testing a PINNED model
+# snapshot against unchanged code. Weekly keeps the drift signal at ~$8/mo.
+# See docs/decisions/ for the full reasoning.
 on:
   pull_request:
     paths:
@@ -11,7 +20,7 @@ on:
       - "src/gerry/evals/**"
       - "evals/**"
   schedule:
-    - cron: "0 9 * * *"     # 09:00 UTC daily
+    - cron: "0 9 * * 1"     # Mondays 09:00 UTC
   workflow_dispatch:
     inputs:
       limit:

@@ -72,11 +72,19 @@ docker run --rm -d --name gerry-pg \
 ### Building the golden set
 
 ```bash
+# 1. convert RAW frames from real shoots to JPEGs
 python tools/build_golden_set.py \
   --shoot /Volumes/scrappy/photos/2026/2026_02_15_dunstan_head_shots \
   --per-shoot 75
-python tools/label.py          # k=keep  m=maybe  r=reject  q=quit
+
+# 2. label them in the browser (recommended) -> http://localhost:8000
+python tools/label_web.py      # K=keep  M=maybe  R=reject  U=undo
+
+# ...or in the terminal, if you prefer
+python tools/label.py          # k/m/r, q to quit
 ```
+
+Both write the same `labels.csv` and are resumable -- stop any time.
 
 Labels (`data/golden/labels.csv`) are committed; **images are not**.
 
