@@ -156,10 +156,17 @@ class TestModelRequest:
         assert req.cost_usd > 0
 
     def test_total_spend_is_summable(self, session: Session):
+        # Scope to a marker so the assertion holds regardless of other rows
+        # in the table -- a test that only passes against an empty database
+        # fails the moment it runs after anything else.
+        marker = f"sum-test-{uuid.uuid4()}"
         for cents in (0.001, 0.002, 0.003):
             session.add(
-                ModelRequest(provider="anthropic", model="m", prompt_version="v1", cost_usd=cents)
+                ModelRequest(
+                    provider="anthropic", model=marker, prompt_version="v1", cost_usd=cents
+                )
             )
         session.flush()
-        rows = session.scalars(select(ModelRequest)).all()
+        rows = session.scalars(select(ModelRequest).where(ModelRequest.model == marker)).all()
+        assert len(rows) == 3
         assert sum(r.cost_usd for r in rows) == pytest.approx(0.006)
