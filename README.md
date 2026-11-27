@@ -11,7 +11,27 @@ ranked cull with reasons, review and override, deliver a private client gallery.
 
 **Live:** https://gerry-cull.fly.dev — [`/healthz`](https://gerry-cull.fly.dev/healthz)
 
-Week 1 — deployed skeleton. Ingest and pre-filter in progress.
+End-to-end working in production: upload → S3 → pre-filter → vision scoring →
+threshold → review UI → client gallery, with every model call costed.
+
+| | measured |
+|---|---|
+| Cost per 100 frames | **$0.83** |
+| Ranking quality (AUC) | **0.657** on a 349-frame golden set |
+| Precision at the shipping threshold (83) | **0.842** |
+| Recall at that threshold | 0.115 |
+
+**What it is honestly good at:** surfacing the strongest frames for review.
+At threshold 83 it finds ~19 frames at 84% precision from 349 — a useful
+first pass, not a replacement for culling. See
+[ADR 0003](docs/decisions/0003-score-and-threshold-instead-of-asking-for-a-verdict.md).
+
+### Operational notes
+
+- The Fly Postgres machine auto-stops when idle. If the app 500s, check
+  `fly status --app gerry-db` and `fly machine start <id>`.
+- Free-tier organisations are limited to 3 machines; the app runs a single
+  instance (`fly scale count 1`) to leave room for the database.
 
 ## How it works
 
