@@ -1,0 +1,93 @@
+name: Eval
+
+# The AI quality gate. Runs when the prompt or model layer changes, and
+# nightly to catch provider-side drift. Deliberately NOT on every commit --
+# real model calls cost money.
+on:
+  pull_request:
+    paths:
+      - "prompts/**"
+      - "src/gerry/models/**"
+      - "src/gerry/evals/**"
+      - "evals/**"
+  schedule:
+    - cron: "0 9 * * *"     # 09:00 UTC daily
+  workflow_dispatch:
+    inputs:
+      limit:
+        description: "Max frames to evaluate (0 = all)"
+        default: "0"
+
+permissions:
+  contents: read
+  pull-requests: write      # needed to post the metrics comment
+
+jobs:
+  harness-selftest:
+    # Proves the gate itself works, offline and free, on every eligible PR.
+    # If the harness is broken, the real eval's verdict is meaningless.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v4
+        with: { version: "0.13.10", enable-cache: true }
+      - run: uv sync --extra dev --frozen
+      - name: metrics + gate unit tests
+        run: uv run pytest tests/unit/test_eval_metrics.py tests/unit/test_eval_gate.py -v
+
+  golden-set-eval:
+    needs: harness-selftest
+    runs-on: ubuntu-latest
+    # Only runs where the API key is available (not on forks).
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v4
+        with: { version: "0.13.10", enable-cache: true }
+      - run: uv sync --extra dev --frozen
+
+      - name: Check the golden set is present
+        id: golden
+        run: |
+          if [ -f data/golden/labels.csv ]; then
+            echo "present=true" >> "$GITHUB_OUTPUT"
+            echo "labels: $(( $(wc -l < data/golden/labels.csv) - 1 ))"
+          else
+            echo "present=false" >> "$GITHUB_OUTPUT"
+            echo "::warning::No golden set yet; skipping the scored eval."
+          fi
+
+      - name: Run eval against the golden set
+        if: steps.golden.outputs.present == 'true'
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: |
+          uv run python evals/run_eval.py \
+            --scorer claude \
+            --limit ${{ github.event.inputs.limit || 0 }} \
+            --baseline evals/baseline.json
+
+      - name: Post metrics diff to the PR
+        if: steps.golden.outputs.present == 'true' && github.event_name == 'pull_request' && always()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const path = 'evals/pr_comment.md';
+            if (!fs.existsSync(path)) return;
+            await github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: fs.readFileSync(path, 'utf8'),
+            });
+
+      - name: Upload eval artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: eval-results
+          path: |
+            evals/last_result.json
+            evals/pr_comment.md
+          if-no-files-found: ignore

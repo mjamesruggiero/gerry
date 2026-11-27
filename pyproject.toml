@@ -60,8 +60,10 @@ src = ["src", "tests"]
 select = ["E", "F", "I", "UP", "B", "SIM", "RUF"]
 
 [tool.ruff.lint.per-file-ignores]
-# tools/ is not an installed package; tests reach it via sys.path
+# tools/ and evals/ are scripts, not installed packages; they adjust
+# sys.path before importing, so imports legitimately follow statements.
 "tests/unit/test_golden_tools.py" = ["E402"]
+"evals/run_eval.py" = ["E402"]
 
 [tool.mypy]
 python_version = "3.13"
