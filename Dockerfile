@@ -18,6 +18,10 @@ RUN --mount=type=cache,target=/root/.cache/uv \
 
 COPY src/ src/
 COPY config.yaml ./
+# Prompts are runtime artifacts, not just docs: the scorer reads them by
+# version at request time. Omitting them produces a container that passes
+# /healthz and then fails on the first model call.
+COPY prompts/ prompts/
 RUN --mount=type=cache,target=/root/.cache/uv \
     uv sync --frozen --no-dev
 
