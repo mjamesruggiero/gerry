@@ -19,7 +19,9 @@ import json
 import logging
 import os
 import sys
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
+from threading import Lock
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
@@ -48,7 +50,7 @@ def load_labels(path: Path) -> dict[str, str]:
         return {r["filename"]: r["label"].strip().lower() for r in csv.DictReader(fh)}
 
 
-def build_scorer(name: str) -> VisionScorer:
+def build_scorer(name: str, prompt_version: str | None = None) -> VisionScorer:
     """Instantiate a scorer by name -- the config-driven swap in practice."""
     if name == "stub":
         return StubScorer()
@@ -60,7 +62,10 @@ def build_scorer(name: str) -> VisionScorer:
         key = os.environ.get("ANTHROPIC_API_KEY")
         if not key:
             raise SystemExit("ANTHROPIC_API_KEY is required for --scorer claude")
-        return ClaudeScorer(client=Anthropic(api_key=key))
+        scorer = ClaudeScorer(client=Anthropic(api_key=key))
+        if prompt_version:
+            scorer.prompt_version_name = prompt_version
+        return scorer
     raise SystemExit(f"unknown scorer: {name!r}")
 
 
@@ -74,7 +79,23 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--baseline", type=Path, default=Path("evals/baseline.json"))
     ap.add_argument("--out", type=Path, default=Path("evals/last_result.json"))
     ap.add_argument("--comment-out", type=Path, default=Path("evals/pr_comment.md"))
+    ap.add_argument(
+        "--predictions-out",
+        type=Path,
+        default=Path("evals/last_predictions.csv"),
+        help="Per-frame predictions, so failures can be analysed without paying to re-run the eval",
+    )
     ap.add_argument("--limit", type=int, default=0, help="0 = all frames")
+    ap.add_argument(
+        "--concurrency",
+        type=int,
+        default=8,
+        help="Parallel model calls. I/O-bound, so this is mostly "
+        "bounded by provider rate limits, not local CPU.",
+    )
+    ap.add_argument(
+        "--prompt-version", default=None, help="Override the prompt version (e.g. cull_v2)"
+    )
     ap.add_argument("--min-precision", type=float, default=0.80)
     ap.add_argument("--max-cost-increase", type=float, default=20.0)
     ap.add_argument("-v", "--verbose", action="store_true")
@@ -90,29 +111,44 @@ def main(argv: list[str] | None = None) -> int:
         names = names[: args.limit]
     logger.info("evaluating %d frames with scorer=%s", len(names), args.scorer)
 
-    scorer = build_scorer(args.scorer)
+    scorer = build_scorer(args.scorer, args.prompt_version)
     predicted: dict[str, str] = {}
     costs: list[float] = []
     latencies: list[int] = []
     failures = 0
+    qualities: dict[str, float] = {}
+    lock = Lock()
+    done = 0
 
-    for i, name in enumerate(names, start=1):
+    def score_one(name: str) -> None:
+        nonlocal failures, done
         image_path = args.images / name
         if not image_path.exists():
             logger.warning("missing image, skipping: %s", name)
-            continue
+            return
         try:
             score = scorer.score(image_path.read_bytes())
-            predicted[name] = score.verdict
-            costs.append(score.usage.cost_usd)
-            latencies.append(score.usage.latency_ms)
+            with lock:
+                predicted[name] = score.verdict
+                if score.quality is not None:
+                    qualities[name] = score.quality
+                costs.append(score.usage.cost_usd)
+                latencies.append(score.usage.latency_ms)
         except (ScoringError, OSError) as exc:
             # A model failure must never silently become a verdict.
-            failures += 1
-            predicted[name] = "unscored"
+            with lock:
+                failures += 1
+                predicted[name] = "unscored"
             logger.warning("scoring failed for %s: %s", name, exc)
-        if i % 25 == 0:
-            logger.info("  %d/%d (spend so far $%.4f)", i, len(names), sum(costs))
+        with lock:
+            done += 1
+            if done % 50 == 0:
+                logger.info("  %d/%d (spend so far $%.4f)", done, len(names), sum(costs))
+
+    with ThreadPoolExecutor(max_workers=args.concurrency) as pool:
+        futures = [pool.submit(score_one, n) for n in names]
+        for f in as_completed(futures):
+            f.result()
 
     result = evaluate(predicted, labels, costs_usd=costs, latencies_ms=latencies)
     baseline = load_baseline(args.baseline)
@@ -124,6 +160,15 @@ def main(argv: list[str] | None = None) -> int:
 
     args.out.parent.mkdir(parents=True, exist_ok=True)
     args.out.write_text(json.dumps(result.as_dict(), indent=2) + "\n")
+
+    # Per-frame detail: an eval you can't inspect only tells you *that*
+    # something regressed, not what.
+    with args.predictions_out.open("w", newline="") as fh:
+        writer = csv.writer(fh)
+        writer.writerow(["filename", "predicted", "labeled", "correct", "quality"])
+        for name in sorted(predicted):
+            pred, truth = predicted[name], labels.get(name, "")
+            writer.writerow([name, pred, truth, int(pred == truth), qualities.get(name, "")])
     comment = format_pr_comment(result, decision, baseline)
     args.comment_out.write_text(comment + "\n")
 

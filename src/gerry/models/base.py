@@ -34,10 +34,16 @@ class Usage:
 
 @dataclass(frozen=True)
 class FrameScore:
-    """A validated verdict for one frame."""
+    """A validated verdict for one frame.
+
+    `quality` is a 0-100 deliverability score. It is optional because older
+    prompt versions don't emit one; when present the pipeline can apply its
+    own threshold rather than trusting the model's verdict (see ADR 0003).
+    """
 
     verdict: str
     reason: str
+    quality: float | None = None
     keywords: list[str] = field(default_factory=list)
     alt_text: str = ""
     usage: Usage = field(default_factory=Usage)
@@ -103,9 +109,20 @@ def parse_score_response(
     else:
         keywords = []
 
+    quality: float | None = None
+    if "quality" in data:
+        try:
+            q = float(data["quality"])
+        except (TypeError, ValueError) as exc:
+            raise ScoringError(f"invalid quality: {data['quality']!r}") from exc
+        if not 0 <= q <= 100:
+            raise ScoringError(f"quality out of range 0-100: {q}")
+        quality = q
+
     return FrameScore(
         verdict=verdict,
         reason=str(data.get("reason", "")).strip(),
+        quality=quality,
         keywords=keywords,
         alt_text=str(data.get("alt_text", "")).strip(),
         usage=usage or Usage(),

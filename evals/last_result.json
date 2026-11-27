@@ -1,0 +1,9 @@
+{
+  "n": 215,
+  "keep_precision": 0.717,
+  "keep_recall": 0.4086,
+  "agreement": 0.6093,
+  "cost_total_usd": 1.6103,
+  "cost_per_100_usd": 0.749,
+  "p95_latency_ms": 3627
+}
