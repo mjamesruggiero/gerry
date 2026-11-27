@@ -45,3 +45,31 @@ class TestOverrideValidation:
     def test_rejects_an_invalid_verdict_before_touching_the_db(self):
         r = client.post("/frames/whatever/override?verdict=excellent")
         assert r.status_code == 400
+
+
+class TestDatabaseUrlNormalisation:
+    """Platforms hand out bare postgres:// URLs; SQLAlchemy needs a driver."""
+
+    def test_rewrites_bare_postgres_scheme(self):
+        from gerry.settings import Settings
+
+        s = Settings(database_url="postgres://u:p@host:5432/db")
+        assert s.database_url.startswith("postgresql+psycopg://")
+
+    def test_rewrites_postgresql_scheme(self):
+        from gerry.settings import Settings
+
+        s = Settings(database_url="postgresql://u:p@host:5432/db")
+        assert s.database_url.startswith("postgresql+psycopg://")
+
+    def test_leaves_an_explicit_driver_alone(self):
+        from gerry.settings import Settings
+
+        url = "postgresql+psycopg://u:p@host:5432/db"
+        assert Settings(database_url=url).database_url == url
+
+    def test_preserves_query_parameters(self):
+        from gerry.settings import Settings
+
+        s = Settings(database_url="postgres://u:p@h:5432/db?sslmode=disable")
+        assert s.database_url.endswith("?sslmode=disable")

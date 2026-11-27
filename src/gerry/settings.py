@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import Any
 
 import yaml
-from pydantic import Field
+from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 CONFIG_PATH = Path(__file__).resolve().parents[2] / "config.yaml"
@@ -43,6 +43,21 @@ class Settings(BaseSettings):
 
     log_level: str = "INFO"
     git_sha: str = Field(default="dev", description="Injected at build time")
+
+    @field_validator("database_url")
+    @classmethod
+    def _normalise_driver(cls, v: str) -> str:
+        """Accept the bare postgres:// scheme platforms hand out.
+
+        Fly (and Heroku, and others) inject `postgres://...`, but SQLAlchemy
+        needs an explicit driver. Normalising here is more robust than
+        rewriting the platform's secret, which would drift on reattach.
+        """
+        if v.startswith("postgres://"):
+            return v.replace("postgres://", "postgresql+psycopg://", 1)
+        if v.startswith("postgresql://"):
+            return v.replace("postgresql://", "postgresql+psycopg://", 1)
+        return v
 
 
 @lru_cache
