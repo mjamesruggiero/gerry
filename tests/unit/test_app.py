@@ -73,3 +73,27 @@ class TestDatabaseUrlNormalisation:
 
         s = Settings(database_url="postgres://u:p@h:5432/db?sslmode=disable")
         assert s.database_url.endswith("?sslmode=disable")
+
+
+class TestWaitForDatabase:
+    """Fly stops idle Postgres; a cold start should be slow, not a 500."""
+
+    def test_returns_true_when_the_database_answers(self):
+        from sqlalchemy import create_engine
+
+        from gerry.store.db import wait_for_database
+
+        engine = create_engine("sqlite://")
+        assert wait_for_database(engine, attempts=1, delay=0) is True
+
+    def test_gives_up_after_the_attempt_budget(self):
+        from sqlalchemy import create_engine
+
+        from gerry.store.db import wait_for_database
+
+        # A port nothing listens on: every attempt fails.
+        engine = create_engine(
+            "postgresql+psycopg://u:p@127.0.0.1:1/none",
+            connect_args={"connect_timeout": 1},
+        )
+        assert wait_for_database(engine, attempts=2, delay=0) is False

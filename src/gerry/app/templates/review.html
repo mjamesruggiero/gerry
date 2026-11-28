@@ -8,10 +8,47 @@
   {% if shoot.status != 'ready' %}· <b>{{ shoot.status }}</b>{% endif %}
 </p>
 
+<div class="panel">
+  <label for="t"><b>Keep threshold</b></label>
+  <input type="range" id="t" min="30" max="95" step="1" value="{{ threshold|round|int }}"
+         oninput="preview(this.value)" onchange="apply(this.value)">
+  <output id="tv">{{ threshold|round|int }}</output>
+  <span class="mut" id="tnote"></span>
+  {% if threshold != default_threshold %}
+    <a href="?" class="mut">reset to {{ default_threshold|round|int }}</a>
+  {% endif %}
+  <div class="mut" style="margin-top:.4rem">
+    Re-thresholding an already-scored shoot is free &mdash; no model calls.
+    Lower keeps more (higher recall, lower precision); higher keeps only the
+    strongest.
+  </div>
+  <div class="curve">
+    {% for c in curve %}
+      <a href="?threshold={{ c.threshold|round|int }}"
+         class="tick {{ 'on' if c.threshold|round|int == threshold|round|int }}"
+         title="{{ c.keep }} keep of {{ c.total }}">{{ c.threshold|round|int }}<b>{{ c.keep }}</b></a>
+    {% endfor %}
+  </div>
+</div>
+
 <p>
-  <a href="/shoots/{{ shoot.id }}/gallery"><button>Create client gallery from keeps</button></a>
+  <a href="/shoots/{{ shoot.id }}/gallery?threshold={{ threshold|round|int }}">
+    <button>Create client gallery from these {{ keep_count }} keeps</button></a>
   <span class="mut">Frames you override are logged as candidate eval data.</span>
 </p>
+
+<script>
+const CURVE = { {% for c in curve %}{{ c.threshold|round|int }}:{{ c.keep }}{{ "," if not loop.last }}{% endfor %} };
+function nearest(v){ const k=Object.keys(CURVE).map(Number);
+  return k.reduce((a,b)=>Math.abs(b-v)<Math.abs(a-v)?b:a); }
+function preview(v){
+  document.getElementById('tv').textContent = v;
+  document.getElementById('tnote').textContent =
+    '\u2248 ' + CURVE[nearest(v)] + ' keeps';
+}
+function apply(v){ window.location = '?threshold=' + v; }
+preview(document.getElementById('t').value);
+</script>
 
 <div class="grid">
 {% for f in frames %}

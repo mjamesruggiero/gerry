@@ -21,9 +21,9 @@ from gerry import __version__
 from gerry.core.ingest import IngestError, validate_upload
 from gerry.settings import get_settings, load_yaml_config
 from gerry.store import repository as repo
-from gerry.store.db import init_engine, session_scope
+from gerry.store.db import init_engine, session_scope, wait_for_database
 from gerry.store.objects import upload_key
-from gerry.store.schema import ShootStatus
+from gerry.store.schema import Base, ShootStatus
 
 logger = logging.getLogger(__name__)
 
@@ -40,8 +40,14 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
     settings = get_settings()
     logging.basicConfig(level=settings.log_level)
     try:
-        init_engine(settings.database_url, create=True)
-        logger.info("database ready")
+        engine = init_engine(settings.database_url)
+        # Fly stops idle Postgres; the first connection wakes it but the boot
+        # takes ~20s. Wait rather than serving 500s during that window.
+        if wait_for_database(engine):
+            Base.metadata.create_all(engine)
+            logger.info("database ready")
+        else:
+            logger.error("database did not come up; /healthz will still answer")
     except Exception as exc:  # pragma: no cover - depends on environment
         logger.error("database unavailable at startup: %s", exc)
     yield
@@ -62,6 +68,7 @@ class FrameView:
     duplicate_group: int | None
     score: Any
     overridden: bool = False
+    auto_rejected: bool = False
 
 
 def _config() -> dict[str, Any]:
@@ -136,14 +143,31 @@ async def create_shoot(
     return RedirectResponse(f"/shoots/{shoot_id}", status_code=303)
 
 
-def _frame_views(shoot: Any) -> list[FrameView]:
+def _frame_views(shoot: Any, threshold: float | None = None) -> list[FrameView]:
+    """Build template views, optionally re-thresholding on the fly.
+
+    Quality scores are stored per frame, so changing the cut point is a pure
+    recomputation -- no model calls, no cost.
+    """
+    from gerry.core.threshold_view import ScoredItem, verdict_at
     from gerry.worker.runner import frame_url
 
     views = []
     for f in sorted(shoot.frames, key=lambda x: x.filename):
-        verdict = (
-            f.score.final_verdict if f.score else ("reject" if f.auto_rejected else "unscored")
-        )
+        if threshold is None:
+            verdict = (
+                f.score.final_verdict if f.score else ("reject" if f.auto_rejected else "unscored")
+            )
+        else:
+            verdict = verdict_at(
+                ScoredItem(
+                    filename=f.filename,
+                    quality=f.quality,
+                    auto_rejected=f.auto_rejected,
+                    override=(f.score.override_verdict if f.score else None),
+                ),
+                threshold,
+            )
         views.append(
             FrameView(
                 id=f.id,
@@ -160,12 +184,33 @@ def _frame_views(shoot: Any) -> list[FrameView]:
 
 
 @app.get("/shoots/{shoot_id}", response_class=HTMLResponse)
-def review(request: Request, shoot_id: str) -> Any:
+def review(request: Request, shoot_id: str, threshold: float | None = None) -> Any:
+    """Review a shoot, optionally at a different keep threshold.
+
+    The slider re-thresholds an already-scored shoot for free, so the
+    operating point is something to explore by feel on real work rather than
+    guess at in config (ADR 0003).
+    """
+    from gerry.core.threshold_view import ScoredItem, suggest_thresholds
+
+    cfg = _config()
+    default_t = float(cfg.get("scoring", {}).get("keep_threshold", 83))
+    active = default_t if threshold is None else threshold
+
     with session_scope() as session:
         shoot = repo.get_shoot(session, shoot_id)
         if shoot is None:
             raise HTTPException(404, "no such shoot")
-        frames = _frame_views(shoot)
+        frames = _frame_views(shoot, active)
+        items = [
+            ScoredItem(
+                filename=f.filename,
+                quality=f.quality,
+                auto_rejected=f.auto_rejected,
+                override=(f.score.override_verdict if f.score else None),
+            )
+            for f in shoot.frames
+        ]
         return TEMPLATES.TemplateResponse(
             request,
             "review.html",
@@ -173,6 +218,9 @@ def review(request: Request, shoot_id: str) -> Any:
                 "shoot": shoot,
                 "frames": frames,
                 "keep_count": sum(1 for f in frames if f.verdict == "keep"),
+                "threshold": active,
+                "default_threshold": default_t,
+                "curve": suggest_thresholds(items),
             },
         )
 
@@ -207,15 +255,18 @@ def override(request: Request, frame_id: str, verdict: str) -> Any:
 
 
 @app.get("/shoots/{shoot_id}/gallery", response_class=HTMLResponse)
-def gallery(request: Request, shoot_id: str) -> Any:
+def gallery(request: Request, shoot_id: str, threshold: float | None = None) -> Any:
     """Client-facing gallery of approved frames, via expiring signed URLs."""
     cfg = _config()
     ttl = int(cfg.get("s3", {}).get("signed_url_ttl_seconds", 604800))
+    active = (
+        float(cfg.get("scoring", {}).get("keep_threshold", 83)) if threshold is None else threshold
+    )
     with session_scope() as session:
         shoot = repo.get_shoot(session, shoot_id)
         if shoot is None:
             raise HTTPException(404, "no such shoot")
-        frames = [f for f in _frame_views(shoot) if f.verdict == "keep"]
+        frames = [f for f in _frame_views(shoot, active) if f.verdict == "keep"]
         return TEMPLATES.TemplateResponse(
             request,
             "gallery.html",

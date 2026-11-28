@@ -39,6 +39,18 @@
  input,select { background:#111113; color:var(--fg); border:1px solid var(--line);
                 border-radius:4px; padding:.4rem .5rem; font-size:.9rem; }
  .dup { outline:1px solid #3b82f6; }
+ .panel { border:1px solid var(--line); border-radius:6px; padding:.9rem 1rem;
+          margin:1rem 0; display:flex; flex-wrap:wrap; gap:.7rem; align-items:center; }
+ .panel input[type=range] { width:min(380px,50vw); accent-color:var(--keep); }
+ .panel output { font-variant-numeric:tabular-nums; font-weight:600; min-width:2.2rem; }
+ .curve { display:flex; gap:2px; width:100%; margin-top:.5rem; flex-wrap:wrap; }
+ .tick { flex:1; min-width:34px; text-align:center; font-size:.65rem; color:var(--mut);
+         text-decoration:none; border:1px solid var(--line); border-radius:3px;
+         padding:.15rem 0; }
+ .tick b { display:block; color:var(--fg); font-size:.8rem; }
+ .tick:hover { border-color:var(--mut); }
+ .tick.on { border-color:var(--keep); color:var(--keep); }
+ .tick.on b { color:var(--keep); }
 </style></head>
 <body>
 <header>
